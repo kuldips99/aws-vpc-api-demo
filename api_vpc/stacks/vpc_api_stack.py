@@ -4,12 +4,12 @@ from aws_cdk import (
     RemovalPolicy,
     aws_apigatewayv2_alpha as apigw,
     aws_apigatewayv2_integrations_alpha as apigw_int,
+    aws_apigatewayv2_authorizers as apigw_auth,
     aws_cognito as cognito,
     aws_lambda as _lambda,
     aws_dynamodb as ddb,
     aws_iam as iam,
 )
-from aws_cdk.aws_apigatewayv2_authorizers_alpha import HttpUserPoolAuthorizer
 from constructs import Construct
 import pathlib
 
@@ -17,7 +17,7 @@ class VpcApiStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
-        # 1. Cognito User Pool
+        # 1. Cognito
         user_pool = cognito.UserPool(
             self, "Users",
             self_sign_up_enabled=True,
@@ -26,14 +26,15 @@ class VpcApiStack(Stack):
         )
         user_pool_client = user_pool.add_client("spa-client")
 
-        # 2. DynamoDB Table
+        # 2. DynamoDB table
         table = ddb.Table(
             self, "VpcMetadata",
             partition_key=ddb.Attribute(name="vpc_id", type=ddb.AttributeType.STRING),
             removal_policy=RemovalPolicy.DESTROY
         )
 
-        # 3. Lambda Execution Role
+        # 3. Lambda layer (boto3 is pre‑installed; include helpers if any)
+
         lambda_role = iam.Role(
             self, "LambdaExecRole",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
@@ -67,7 +68,6 @@ class VpcApiStack(Stack):
         )
         src_dir = str(pathlib.Path(__file__).parent.parent / "lambda_src")
 
-        # 4. Lambda Functions
         create_fn = _lambda.Function(
             self, "CreateVpcFn",
             handler="create_vpc.handler",
@@ -81,23 +81,17 @@ class VpcApiStack(Stack):
             **common_lambda_args
         )
 
-        # 5. HTTP API
+        # 4. HTTP API (API Gateway v2)
         http_api = apigw.HttpApi(self, "VpcApi",
             cors_preflight=apigw.CorsPreflightOptions(
                 allow_methods=[apigw.CorsHttpMethod.ANY],
                 allow_origins=["*"]
             )
         )
+        authorizer = apigw_auth.HttpUserPoolAuthorizer("CognitoAuth",
+                                                  user_pool=user_pool,
+                                                  user_pool_clients=[user_pool_client])
 
-        # Cognito Authorizer for HTTP API
-        authorizer = HttpUserPoolAuthorizer(self, "CognitoAuth",
-            authorizer_name="CognitoAuth",
-            user_pool=user_pool,
-            user_pool_clients=[user_pool_client],
-            identity_source=["$request.header.Authorization"]
-        )
-
-        # Routes
         http_api.add_routes(
             path="/vpcs",
             methods=[apigw.HttpMethod.POST],
