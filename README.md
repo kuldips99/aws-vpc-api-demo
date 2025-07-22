@@ -47,6 +47,13 @@ To add additional dependencies, for example other CDK libraries, just add
 them to your `setup.py` file and rerun the `pip install -r requirements.txt`
 command.
 
+How to generate the JWT for accessing the API:
+TOKEN=$(aws cognito-idp initiate-auth \
+  --auth-flow USER_PASSWORD_AUTH \
+  --client-id $CLIENT_ID \
+  --auth-parameters USERNAME=$USERNAME,PASSWORD=$PASSWORD \
+  --query 'AuthenticationResult.IdToken' --output text)
+
 ## Useful commands
 
  * `cdk ls`          list all stacks in the app
